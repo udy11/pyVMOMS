@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.integrate
 import scipy.interpolate
+import scipy.optimize
 import matplotlib.pyplot as plt
 import sys
 from gbvpsolver import gbvpsolver
@@ -118,6 +119,30 @@ def fyp(p, rnpe, p0):
     
     return np.array([rnp[0], xx[0], rnp[2], xx[1], eep, xx[2]])
 
+def geotrn1(trng, elip):
+    ''' (float, float) --> float, float
+        Calculates R2/R1 and E used in VMOMS from geometric
+        ellipticity and triangularity
+    '''
+    ctc = (scipy.optimize.root(lambda x: 2 * x - 3 * x**3 - trng * (1 - 2 * x**2), 0.5 * trng).x)[0]
+    ctc2 = ctc * ctc
+    c2tc = 2.0 * ctc2 - 1
+    return (trng - ctc) / (1.0 - c2tc), elip * np.sqrt(1.0 - ctc2) / (trng * ctc - c2tc)
+
+def geotrn2(r1, r2, ee):
+    ''' (float, float, float) --> float, float
+        Calculates geometric ellipticity and triangularity from
+        R1, R2 and E in VMOMS
+    '''
+    r2r1 = r2 / r1
+    r2r12 = r2r1 * r2r1
+    ctc = 4.0 * r2r1 / (1.0 + np.sqrt(1.0 + 32.0 * r2r12))
+    ctc2 = ctc * ctc
+    c2tc = 2.0 * ctc2 - 1
+    stc = np.sqrt(1.0 - ctc2)
+    s2tc = 2.0 * stc * ctc
+    return r2r1 + ctc - r2r1 * c2tc, ee * (stc + r2r1 * s2tc)
+
 mu0 = 4.0e-7 * np.pi
 pn = 160
 pa = 1.99375
@@ -141,10 +166,11 @@ xdt = np.linspace(0.00625/pa, 1.0, ndt)
 pres = scipy.interpolate.CubicSpline(xdt, presdt)
 curi = scipy.interpolate.CubicSpline(xdt, curidt)
 
-elp = 1.3
-trg = 0.01
+elp = 1.7
+trg = 0.3
+r2f, eef = geotrn1(trg, elp)
 
-p0 = np.array([rga - trg + 0.1, 0.01, 1.0])
+p0 = np.array([rga - r2f + 0.1, 0.01, 1.0])
 
 def fy0(t, p):
     return np.array([p[0] - lmb1 * t**2,
@@ -155,9 +181,9 @@ def fy0(t, p):
                      2.0 * lmb2 * t])
 
 def frt(t, y):
-    return np.array([y[0, -1] - (rga - trg),
-                     y[2, -1] - trg,
-                     y[4, -1] - elp])
+    return np.array([y[0, -1] - (rga - r2f),
+                     y[2, -1] - r2f,
+                     y[4, -1] - eef])
 
 ps, solv = gbvpsolver(lambda p: pdt, fyp, fy0, frt, p0, ivp_method = 'RK45', rt_method = 'lm')
 print(solv[:, [0, -1]])
