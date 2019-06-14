@@ -9,6 +9,7 @@ import numpy as np
 import scipy.integrate
 import scipy.interpolate
 import scipy.optimize
+import sys
 from gbvpsolver import gbvpsolver
 
 def thavg(f, dth):
@@ -43,17 +44,19 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_me
     
         Finds Moment Solutions to Grad-Shafranov Equation
         
-        rmaj = Major Radius in meters (float, input)
-        tring = Geometric Triangularity desired at rhodt[-1], dimensionless (float, input)
-        ellip = Ellipticity desired at rhodt[-1], dimensionless (float, input)
-        rhodt = Grid on which pressure and current data are mentioned (1d float array, input)
-        presdt = Pressure data on rhodt (1d float array, input)
-        curidt = Current data on rhodt (1d float array, input)
-        ivp_method = method to be used by ODE IVP solver, check odesolver() for details (str, optional input)
-        rt_method = method to be used by root finder, check rootfinder() for details (str, optional input)
+        INPUT:
+        rmaj = Major Radius (meters, float)
+        tring = Geometric Triangularity desired at rhodt[-1] (unitless, float)
+        ellip = Ellipticity desired at rhodt[-1] (unitless, float)
+        rhodt = Grid on which pressure and current data are mentioned (meters, 1d float array)
+        presdt = Pressure data on rhodt (pascal, 1d float array)
+        curidt = Current data on rhodt (amperes, 1d float array)
+        ivp_method = method to be used by ODE IVP solver, check odesolver() for details (str, optional)
+        rt_method = method to be used by root finder, check rootfinder() for details (str, optional)
         
-        ps = final grid on which solution was found, same as R1 (1d float array, output)
-        solv = final values of R0, R0x, R2, R2x, E, Ex on ps (2d float array, output)
+        OUTPUT:
+        ps = final grid on which solution was found, same as R1 (unitless, 1d float array)
+        solv = final values of R0, R0x, R2, R2x, E, Ex on ps (unitless, 2d float array)
     '''
     mu0 = 4.0e-7 * np.pi
     lmb1 = 1.0e-4
@@ -122,6 +125,7 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_me
         gs10 = gs8 * r * zt / sg
         gs12 = gs10 * cs2t
         gs21 = gs8 * r * rt * sn1t / sg
+
         gs22 = gs8 * r * rt * sn2t / sg
         gs5 = zt / (r ** 2 * sg)
         gs6 = (gtt * (-rtp * zp + rp * ztp) + gtp * (rtt * zp + rt * ztp - rtp * zt - rp * ztt)) * r / (sg ** 3)
@@ -214,8 +218,8 @@ if __name__ == '__main__':
 
     import matplotlib.pyplot as plt
     n2 = len(solv[0])
-    rr = pa * np.array([[solv[0][k] - ps[k] * np.cos(t) + solv[2][k] * np.cos(2*t) for t in np.linspace(0, 2*np.pi, 64)] for k in range(n2)])
-    zz = pa * np.array([[solv[4][k] * (ps[k] * np.sin(t) + solv[2][k] * np.sin(2*t)) for t in np.linspace(0, 2*np.pi, 64)] for k in range(n2)])
+    rr = rhodt[-1] * np.array([[solv[0][k] - ps[k] * np.cos(t) + solv[2][k] * np.cos(2*t) for t in np.linspace(0, 2*np.pi, 64)] for k in range(n2)])
+    zz = rhodt[-1] * np.array([[solv[4][k] * (ps[k] * np.sin(t) + solv[2][k] * np.sin(2*t)) for t in np.linspace(0, 2*np.pi, 64)] for k in range(n2)])
     plt.axes().set_aspect('equal')
     for j in range(0, len(rr), len(rr) // 12):
         plt.plot(rr[j,:], zz[j,:])
