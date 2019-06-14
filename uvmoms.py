@@ -4,6 +4,8 @@
 
 # Troubleshooting:
 #   If "Singular Matrix" error appears, try increasing x0 in uvmoms()
+#   If there are issues with np.linalg.solve, try np.linalg.lstsq (see
+#     commented line there)
 
 import numpy as np
 import scipy.integrate
@@ -39,7 +41,7 @@ def geotrn2(r1, r2, ee):
     s2tc = 2.0 * stc * ctc
     return r2r1 + ctc - r2r1 * c2tc, ee * (stc + r2r1 * s2tc)
 
-def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_method = 'lm'):
+def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, p0in, ivp_method = 'RK45', rt_method = 'lm'):
     ''' (float, float, float, array, array, array, [str, str]) --> array, array
     
         Finds Moment Solutions to Grad-Shafranov Equation
@@ -51,6 +53,10 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_me
         rhodt = Grid on which pressure and current data are mentioned (meters, 1d float array)
         presdt = Pressure data on rhodt (pascal, 1d float array)
         curidt = Current data on rhodt (amperes, 1d float array)
+        p0in = parameters used to initialize p0 (unitless, array)
+               (rmaj/rmin - tring) + p0in[0] roughly gives R0 at rhodt[0]
+               p0in[1] * rhodt[0]**2 roughly gives R2 at rhodt[0]
+               p0in[2] roughly gives E at rhodt[0]
         ivp_method = method to be used by ODE IVP solver, check odesolver() for details (str, optional)
         rt_method = method to be used by root finder, check rootfinder() for details (str, optional)
         
@@ -73,7 +79,7 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_me
     pres = scipy.interpolate.CubicSpline(rhodt/rho0, presdt/pres0)
     curi = scipy.interpolate.CubicSpline(rhodt/rho0, curidt/curi0)
 
-    p0 = np.array([rga - r2f + 0.1, 0.01, 1.0])
+    p0 = np.array([rga - r2f + p0in[0], p0in[1], p0in[2]])
 
     def fy0(x0, p):
         return np.array([p[0] - lmb1 * x0**2,
@@ -196,6 +202,7 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_me
         a2e = -(rn[1] * dmr221 + rn[2] * dmr222)
         aee = -(rn[1] * dmee21 + rn[2] * dmee22)
         a = np.array([[a00, a02, a0e], [a20, a22, a2e], [ae0, ae2, aee]])
+        #yxx = np.linalg.lstsq(a, b, rcond=-1)[0]
         yxx = np.linalg.solve(a, b)
 
         return np.array([rnp[0], yxx[0], rnp[2], yxx[1], eep, yxx[2]])
@@ -212,7 +219,8 @@ if __name__ == '__main__':
     triang = 0.0
     ellip = 1.0
     rhodt = np.linspace(0.00625, 1.99375, len(presdt))
-    ps, solv = uvmoms(rmaj, triang, ellip, rhodt, presdt, curidt, ivp_method = 'RK45', rt_method = 'lm')
+    p0in = np.array([0.1, 0.01, 1.0])
+    ps, solv = uvmoms(rmaj, triang, ellip, rhodt, presdt, curidt, p0in, ivp_method = 'RK45', rt_method = 'lm')
 
     print(solv[:, [0, -1]])
 
