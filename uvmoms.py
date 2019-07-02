@@ -1,24 +1,24 @@
-# Last Updated: 2019-Jun-27
+# Last Updated: 2019-Jul-02
 
 # VMOMS Code for finding Moment Solutions to Grad-Shafranov Equation
 # Original: L.L. Lao et al, Computer Physics Communication 27 (1982) 129-146
 
-# Tested with Python 3.6.4, Numpy 1.13.3, Scipy 1.3.0, Matplotlib 2.1.1
-
-# All You Need To Do:
+# ALL YOU NEED TO DO:
 # Call uvmoms() function with appropriate inputs
 # Call flux_surface_plot() using output of uvmoms() to visualize surface plots
 # Call other_variables() using output of uvmoms() to calculate and plot several other physical variables
 # Call tex_report() using output of uvmoms() and other_variables() to print a readable report (convert from tex to pdf externally)
 
 # Troubleshooting:
-#   If "Singular Matrix" error appears, try increasing x0 in uvmoms()
-#   If there are issues with np.linalg.solve, try np.linalg.lstsq (see commented line there)
+#   If "Singular Matrix" error appears, make sure rhodt[0] isn't too close to 0
+#   If there are issues with np.linalg.solve in fyp() of uvmoms(), try np.linalg.lstsq (see commented line there)
 
 # Things feel free to change:
-#   Number of points in theta array th in uvmoms(), if needed
+#   Number of points in theta array th in uvmoms(), if needed. Keep it odd to be compatible with Simpson's Rule for integration
+#   lmb1 and lmb2 in uvmoms(), they are small values used in estimating initial values of y. their exact values don't have much impact on final results
 #   In function fyp() in uvmoms(), one can choose different interpolation method for pressure and current. Theoretically they are expected to have zero derivative at boundaries, which can be specified in CubicSpline() interpolation function using option bc_type, but it was ignored because our grids don't start at 0 and may not end at exact edge of the system, thus imposing 0 derivatives for pressure and current will be incorrect. Still, other options can be used instead of default 'not-a-knot'
-#   One dilemma exists in other_variables(), where cumtrapz() function is used to get integrated values of some variables. For example, we get vol from volp by integrating. However, cumtrapz() doesn't evaluate value at the first point. For now, I decided to get vol(x[0]) by a quadratic polynomial fit using value of volx(x[0]) and assuming vol(0)=0 and volx(0)=0. Similar methods were used for some other variables and are mentioned at respectively. However, better assumptions can be thought of.
+
+# Tested with Python 3.6.4, Numpy 1.13.3, Scipy 1.3.0, Matplotlib 2.1.1
 
 import numpy as np
 import scipy.integrate
@@ -30,7 +30,6 @@ from gbvpsolver import gbvpsolver
 
 def plotter(x, y, ttl = '', xlbl = '', xunit = '', ylbl = '', yunit = '', fldr = '', frmt = 'png', dpi = 200):
     ''' (array, array, [str, str, str, str, str, str, str, int]) --> bool
-
         Plots x and y and saves in fldr folder
         Defines title using ttl, xlabel with xlbl and xunit, ylabel with ylbl and yunit
         File name is yunit + frmt
@@ -52,11 +51,15 @@ def plotter(x, y, ttl = '', xlbl = '', xunit = '', ylbl = '', yunit = '', fldr =
         fyl = ylbl.replace(' ', '_') + '.' + frmt
     else:
         fyl = ttl.replace(' ', '_') + '.' + frmt
-    plt.savefig(fldr + '/' +  fyl, dpi = dpi, format = frmt)
+    plt.savefig(fldr + '/' +  fyl, dpi = dpi, format = frmt, bbox_inches = 'tight')
     return True
 
-def thavg(f, dth):
-    return scipy.integrate.simps(f, dx = dth) / np.pi
+def thavg(fdt, dth):
+    ''' (array, float) --> float
+        Calculates average of data fdt on uniform array of theta in 0 to np.pi with gap dth, using Simpson's Rule
+        Please prefer to have odd number of points in fdt to be compatible with Simpson's Rule
+    '''
+    return scipy.integrate.simps(fdt, dx = dth) / np.pi
 
 def geotrn1(trng, elip):
     ''' (float, float) --> float, float
@@ -258,8 +261,8 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, p0in, ivp_method = 'RK45',
     y[-1, :] = y[-1, :] / rho0
     return y
 
-def flux_surface_plot(x, y, nplots = 8):
-    ''' (float, array, array, int)
+def flux_surface_plot(x, y, nplots = 8, plotdir = 'plots'):
+    ''' (array, array, [int, str])
 
         Plots flux surfaces in 2D Cartesian co-ordinates (R,Z)
 
@@ -267,9 +270,12 @@ def flux_surface_plot(x, y, nplots = 8):
         x = surface labels R1, output from uvmoms (meter; 1d float array)
         y = R0, R0x, R2, R2x, E, Ex on x, output from uvmoms (R in meter, E unitless; 2d float array)
         nplots = number of contours/plots (int; optional)
+        plotdir = directory in which the flux surface plot is saved (str; optional)
     '''
-    if not os.path.isdir('plots'):
-        os.mkdir('plots')
+    if plotdir[-1] == '/' or plotdir[-1] == '\\':
+        plotdir = plotdir[:-1]
+    if not os.path.isdir(plotdir):
+        os.mkdir(plotdir)
     plt.clf()
     plt.tight_layout()
     ny = len(y[0])
@@ -286,10 +292,10 @@ def flux_surface_plot(x, y, nplots = 8):
     for j in js:
         plt.plot(rr[j,:], zz[j,:], color = colors[k])
         k += 1
-    plt.savefig('plots/flux_surfaces.png', dpi = 200)
+    plt.savefig(plotdir + '/flux_surfaces.png', dpi = 200, bbox_inches = 'tight')
 
-def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True):
-    ''' (float, float, array, array, array, array) --> several arrays
+def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'plots'):
+    ''' (float, float, array, array, array, array, [bool, str]) --> several arrays
 
         Computes several relevant variables using results of uvmoms()
 
@@ -301,6 +307,7 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True):
         presdt = Pressure data on rhodt (pascal; 1d float array)
         curidt = Current data on rhodt (ampere; 1d float array)
         iplot = whether to plot and save all output variables as png (bool; optional)
+        plotdir = directory in which all the plots are saved (str; optional)
 
         OUTPUT:
         trng = Geometrical Triangularity of flux surfaces (unitless; 1d float array)
@@ -357,15 +364,14 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True):
         asg[i] = thavg(sg[i,:], dth)
         asgr2[i] = thavg(sg[i,:] / r[i,:]**2, dth)
         agttsg[i] = thavg(gtt / sg[i,:], dth)
-        srfc[i] = thavg(r[i,:] * np.sqrt(gtt), dth)
+        srfc[i] = fpi2 * thavg(r[i,:] * np.sqrt(gtt), dth)
         trng[i], elip[i] = geotrn2(x[i], y[2, i], y[4, i])
 
-    srfc *= fpi2
     volx = fpi2 * asg
-    vol = np.append(volx[0] * 0.5 * x[0], scipy.integrate.cumtrapz(volx, x))    # first value calculated with quadratic fit assuming volx(x=0)=0 and vol(x=0)=0
+    vol = scipy.integrate.cumtrapz(np.append(0, volx), np.append(0, x))    # assuming volx(x=0)=0 and vol(x=0)=0
 
     psix = -mu0 * curidt / (tpi * agttsg)
-    psi = np.append(psix[0] * 0.5 * x[0], scipy.integrate.cumtrapz(psix, x))    # first value calculated with quadratic fit assuming psix(x=0)=0 and psi(x=0)=0
+    psi = scipy.integrate.cumtrapz(np.append(0, psix), np.append(0, x))    # assuming psix(x=0)=0 and psi(x=0)=0
 
     cflx0 = bt0 * rmaj / mu0
     cflx2x = -2.0 * (curidt * curipdt / agttsg / fpi2 + prespdt * asg / mu0) / asgr2
@@ -375,7 +381,7 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True):
     cflx = np.sqrt(cflx2)
 
     phix = tpi * cflx * mu0 * asgr2
-    phi = np.append(phix[0] * 0.5 * x[0], scipy.integrate.cumtrapz(phix, x))    # first value calculated with quadratic fit assuming phix(x=0)=0 and phi(x=0)=0
+    phi = scipy.integrate.cumtrapz(np.append(0, phix), np.append(0, x))    # assuming phix(x=0)=0 and phi(x=0)=0
 
     q = tpi * cflx * asgr2 * agttsg / curidt
 
@@ -389,21 +395,23 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True):
         jeqv[i] = thavg(jphi[i,:] * sgr, dth) / thavg(sgr, dth)
 
     if iplot:
-        if not os.path.isdir('plots'):
-            os.mkdir('plots')
+        if plotdir[-1] == '/' or plotdir[-1] == '\\':
+            plotdir = plotdir[:-1]
+        if not os.path.isdir(plotdir):
+            os.mkdir(plotdir)
         pdpi = 200
-        plotter(x/x[-1], trng, xlbl = 'x', xunit = '', ttl = 'Geometric Triangularity', ylbl = 'δ', yunit = '', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], elip, xlbl = 'x', xunit = '', ttl = 'Geometric Ellipticity', ylbl = 'κ', yunit = '', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], srfc, xlbl = 'x', xunit = '', ttl = 'Surface Area', ylbl = 'A', yunit = 'meter**2', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], volx, xlbl = 'x', xunit = '', ttl = 'Volume Derivative', ylbl = "V'", yunit = 'meter**2', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], vol, xlbl = 'x', xunit = '', ttl = 'Volume', ylbl = 'V', yunit = 'meter**3', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], psix, xlbl = 'x', xunit = '', ttl = 'Poloidal Flux Derivative', ylbl = "ψ'", yunit = 'tesla * meter', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], psi, xlbl = 'x', xunit = '', ttl = 'Poloidal Flux', ylbl = 'ψ', yunit = 'tesla * meter**2', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], cflx, xlbl = 'x', xunit = '', ttl = 'Current Flux Function', ylbl = 'F', yunit = 'ampere', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], phix, xlbl = 'x', xunit = '', ttl = 'Toroidal Flux Derivative', ylbl = "ϕ'", yunit = 'tesla * meter', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], phi, xlbl = 'x', xunit = '', ttl = 'Toroidal Flux', ylbl = 'ϕ', yunit = 'tesla * meter**2', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], q, xlbl = 'x', xunit = '', ttl = 'Safety Factor', ylbl = 'Q', yunit = '', fldr = 'plots', frmt = 'png', dpi = pdpi)
-        plotter(x/x[-1], jeqv, xlbl = 'x', xunit = '', ttl = 'Current Density Equivalent', ylbl = 'Jeqv', yunit = 'ampere / meter**2', fldr = 'plots', frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], trng, xlbl = 'x', xunit = '', ttl = 'Geometric Triangularity', ylbl = 'δ', yunit = '', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], elip, xlbl = 'x', xunit = '', ttl = 'Geometric Ellipticity', ylbl = 'κ', yunit = '', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], srfc, xlbl = 'x', xunit = '', ttl = 'Surface Area', ylbl = 'A', yunit = 'meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], volx, xlbl = 'x', xunit = '', ttl = 'Volume Derivative', ylbl = "V'", yunit = 'meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], vol, xlbl = 'x', xunit = '', ttl = 'Volume', ylbl = 'V', yunit = 'meter**3', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], psix, xlbl = 'x', xunit = '', ttl = 'Poloidal Flux Derivative', ylbl = "ψ'", yunit = 'tesla * meter', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], psi, xlbl = 'x', xunit = '', ttl = 'Poloidal Flux', ylbl = 'ψ', yunit = 'tesla * meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], cflx, xlbl = 'x', xunit = '', ttl = 'Current Flux Function', ylbl = 'F', yunit = 'ampere', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], phix, xlbl = 'x', xunit = '', ttl = 'Toroidal Flux Derivative', ylbl = "ϕ'", yunit = 'tesla * meter', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], phi, xlbl = 'x', xunit = '', ttl = 'Toroidal Flux', ylbl = 'ϕ', yunit = 'tesla * meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], q, xlbl = 'x', xunit = '', ttl = 'Safety Factor', ylbl = 'Q', yunit = '', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        plotter(x/x[-1], jeqv, xlbl = 'x', xunit = '', ttl = 'Current Density Equivalent', ylbl = 'Jeqv', yunit = 'ampere / meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
 
     return trng, elip, srfc, volx, vol, psix, psi, cflx, phix, phi, q, jeqv
 
@@ -420,14 +428,15 @@ if __name__ == '__main__':
     curifx = scipy.interpolate.CubicSpline(xdt, curidt)
 
     rmaj = 6.2
-    triang = 0.0
-    ellip = 1.0
+    triang = 0.3
+    ellip = 1.5
     bt0 = 5.3
     rhodt = np.linspace(0.01875, 1.99375, len(presdt))
     p0in = np.array([0.1, 0.01, 1.0])
 
     y = uvmoms(rmaj, triang, ellip, rhodt, presfx(rhodt), curifx(rhodt), p0in, ivp_method = 'RK45', rt_method = 'lm', rt_tol = 1.0e-10)
 
-    other_variables(rmaj, bt0, rhodt, y, presfx(rhodt), curifx(rhodt), iplot = True)
+    other_variables(rmaj, bt0, rhodt, y, presfx(rhodt), curifx(rhodt), iplot = True, plotdir = 'plots')
 
-    flux_surface_plot(rhodt, y, nplots = 12)
+    flux_surface_plot(rhodt, y, nplots = 12, plotdir = 'plots')
+
