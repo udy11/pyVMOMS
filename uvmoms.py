@@ -1,4 +1,4 @@
-# Last Updated: 2019-Jul-02
+# Last Updated: 2019-Jul-11
 
 # VMOMS Code for finding Moment Solutions to Grad-Shafranov Equation
 # Original: L.L. Lao et al, Computer Physics Communication 27 (1982) 129-146
@@ -7,16 +7,17 @@
 # Call uvmoms() function with appropriate inputs
 # Call flux_surface_plot() using output of uvmoms() to visualize surface plots
 # Call other_variables() using output of uvmoms() to calculate and plot several other physical variables
-# Call tex_report() using output of uvmoms() and other_variables() to print a readable report (convert from tex to pdf externally)
+# Call tex_report() using output of uvmoms() and other_variables() to print a readable report (convert from .tex to .pdf externally)
 
-# Troubleshooting:
+# TROUBLESHOOTING:
 #   If "Singular Matrix" error appears, make sure rhodt[0] isn't too close to 0
 #   If there are issues with np.linalg.solve in fyp() of uvmoms(), try np.linalg.lstsq (see commented line there)
 
-# Things feel free to change:
-#   Number of points in theta array th in uvmoms(), if needed. Keep it odd to be compatible with Simpson's Rule for integration
-#   lmb1 and lmb2 in uvmoms(), they are small values used in estimating initial values of y. their exact values don't have much impact on final results
+# NOTE:
+#   One can change number of points in theta array th in uvmoms() if needed. Keep it odd to be compatible with Simpson's Rule for integration
+#   One can change lmb1 and lmb2 in uvmoms(), they are small values used in estimating initial values of y. their exact values don't have much impact on final results
 #   In function fyp() in uvmoms(), one can choose different interpolation method for pressure and current. Theoretically they are expected to have zero derivative at boundaries, which can be specified in CubicSpline() interpolation function using option bc_type, but it was ignored because our grids don't start at 0 and may not end at exact edge of the system, thus imposing 0 derivatives for pressure and current will be incorrect. Still, other options can be used instead of default 'not-a-knot'
+#   In other_variables(), psi, cflx, phi, btor, jphi and jeqv are calculated in poloidal plane only, to get their total values on the flux surfaces in 3D multiply them by 2.0*np.pi
 
 # Tested with Python 3.6.4, Numpy 1.13.3, Scipy 1.3.0, Matplotlib 2.1.1
 
@@ -113,9 +114,9 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, p0in, ivp_method = 'RK45',
     neq = len(p0in) * 2
     rho0 = rhodt[-1]
     rho = rhodt/rho0
+    rga = rmaj / rho0
     r2f, eef = geotrn1(tring, ellip)
 
-    rga = rmaj / rho0
     pres0 = np.max(presdt)
     curi0 = np.max(curidt)
     pres = scipy.interpolate.CubicSpline(rho, presdt/pres0)
@@ -253,8 +254,6 @@ def uvmoms(rmaj, tring, ellip, rhodt, presdt, curidt, p0in, ivp_method = 'RK45',
 
     x, y = gbvpsolver(lambda x: rho, fyp, fy0, frt, p0, ivp_method = ivp_method, rt_method = rt_method, rt_tol = rt_tol)
 
-    print(y[:, [0, -1]])
-
     # inverting back final results from normalization
     for k in range(0, neq-2, 2):
         y[k, :] = rho0 * y[k, :]
@@ -315,18 +314,22 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'pl
         srfc = Surface Area of flux surfaces (meter**2; 1d float array)
         volx = Derivative of volume w.r.t. x (meter**2; 1d float array)
         vol = Volume of flux surfaces (m**3; 1d float array)
-        psix = Derivative of Poloidal Flux (tesla * meter; 1d float array)
-        psi = Poloidal Flux (tesla * meter**2; 1d float array)
+        psix = Derivative of Poloidal Flux in a poloidal plane (tesla * meter; 1d float array)
+        psi = Poloidal Flux in a poloidal plane (tesla * meter**2; 1d float array)
         cflx = Current Flux Function F in a poloidal plane (ampere; 1d float array)
-        phix = Derivative of Toroidal Flux (tesla * meter; 1d float array)
-        phi = Toroidal Flux (tesla * meter**2; 1d float array)
+        phix = Derivative of Toroidal Flux in a poloidal plane (tesla * meter; 1d float array)
+        phi = Toroidal Flux in a poloidal plane (tesla * meter**2; 1d float array)
         q = Safety Factor (unitless; 1d float array)
         jeqv = Equivalent Current Density (ampere / meter**2; 1d float array)
+        betat = beta-toroidal (unitless; float)
+        betap = beta-poloidal (unitless; float)
+        betan = beta-normalized (unitless; float)
+        # iind = internal inductance (unitless; 1d float array)
     '''
-    dx = x[1] - x[0]
     mu0 = 4.0e-7 * np.pi
     tpi = 2.0 * np.pi
     fpi2 = tpi**2
+    xz = np.append(0, x)
     pres = scipy.interpolate.CubicSpline(x, presdt)
     curi= scipy.interpolate.CubicSpline(x, curidt)
     prespdt = pres(x, 1)
@@ -368,10 +371,10 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'pl
         trng[i], elip[i] = geotrn2(x[i], y[2, i], y[4, i])
 
     volx = fpi2 * asg
-    vol = scipy.integrate.cumtrapz(np.append(0, volx), np.append(0, x))    # assuming volx(x=0)=0 and vol(x=0)=0
+    vol = scipy.integrate.cumtrapz(np.append(0, volx), xz)    # assuming volx(x=0)=0 and vol(x=0)=0
 
     psix = -mu0 * curidt / (tpi * agttsg)
-    psi = scipy.integrate.cumtrapz(np.append(0, psix), np.append(0, x))    # assuming psix(x=0)=0 and psi(x=0)=0
+    psi = scipy.integrate.cumtrapz(np.append(0, psix), xz)    # assuming psix(x=0)=0 and psi(x=0)=0
 
     cflx0 = bt0 * rmaj / mu0
     cflx2x = -2.0 * (curidt * curipdt / agttsg / fpi2 + prespdt * asg / mu0) / asgr2
@@ -380,8 +383,8 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'pl
     cflx2 = np.append(cflx2x[1] * 0.5 * (x[0]**2 - x[1]**2) / x[1] + cflx2[0], cflx2)    # first value calculated with quadratic fit assuming cflx2x(x=0)=0 and using values at x[1]
     cflx = np.sqrt(cflx2)
 
-    phix = tpi * cflx * mu0 * asgr2
-    phi = scipy.integrate.cumtrapz(np.append(0, phix), np.append(0, x))    # assuming phix(x=0)=0 and phi(x=0)=0
+    phix = cflx * mu0 * asgr2
+    phi = scipy.integrate.cumtrapz(np.append(0, phix), xz)    # assuming phix(x=0)=0 and phi(x=0)=0
 
     q = tpi * cflx * asgr2 * agttsg / curidt
 
@@ -390,9 +393,21 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'pl
     jeqv = np.empty(nx)
     for i in range(nx):
         jphi[i,:] = -(r[i,:] * prespdt[i] + mu0 * cflx2x[i] * 0.5 / r[i,:]) * tpi * agttsg[i] / mu0 / curidt[i]
-        #btor[i,:] = cflx[i] * mu0 / r[i,:]
+        #btor[i,:] = cflx[i] * mu0 / r[i,:]    # needs verification
         sgr = sg[i,:]  / r[i,:]
         jeqv[i] = thavg(jphi[i,:] * sgr, dth) / thavg(sgr, dth)
+
+    # Following formulas of beta match against original VMOMS but still need to be checked
+    curi0 = np.max(curidt)
+    casg = scipy.integrate.cumtrapz(np.append(0, asg), xz)
+    spasg = scipy.integrate.trapz(np.append(0, presdt * asg), x = xz)
+    betap = spasg * asg[-1] * agttsg[-1] * 8.0 * np.pi**2 / curi0**2 / mu0 / casg[-1]
+    betat = spasg * 2.0 * mu0 / bt0**2 / casg[-1]
+    betan = betat * 100 * x[-1] * bt0 * 1.0e6 / curi0
+
+    # Following calculates internal inductance but needs verification
+    #curidt2 = curidt**2
+    #iind = asg * agttsg * scipy.integrate.cumtrapz(np.append(0, curidt2 / agttsg), xz) / casg / curidt2
 
     if iplot:
         if plotdir[-1] == '/' or plotdir[-1] == '\\':
@@ -412,8 +427,9 @@ def other_variables(rmaj, bt0, x, y, presdt, curidt, iplot = True, plotdir = 'pl
         plotter(x/x[-1], phi, xlbl = 'x', xunit = '', ttl = 'Toroidal Flux', ylbl = 'ϕ', yunit = 'tesla * meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
         plotter(x/x[-1], q, xlbl = 'x', xunit = '', ttl = 'Safety Factor', ylbl = 'Q', yunit = '', fldr = plotdir, frmt = 'png', dpi = pdpi)
         plotter(x/x[-1], jeqv, xlbl = 'x', xunit = '', ttl = 'Current Density Equivalent', ylbl = 'Jeqv', yunit = 'ampere / meter**2', fldr = plotdir, frmt = 'png', dpi = pdpi)
+        #plotter(x/x[-1], iind, xlbl = 'x', xunit = '', ttl = 'Internal Inductance', ylbl = 'Li', yunit = '', fldr = 'plots', frmt = 'png', dpi = pdpi)
 
-    return trng, elip, srfc, volx, vol, psix, psi, cflx, phix, phi, q, jeqv
+    return trng, elip, srfc, volx, vol, psix, psi, cflx, phix, phi, q, jeqv, betat, betap, betan
 
 def tex_report():
     return
@@ -439,4 +455,3 @@ if __name__ == '__main__':
     other_variables(rmaj, bt0, rhodt, y, presfx(rhodt), curifx(rhodt), iplot = True, plotdir = 'plots')
 
     flux_surface_plot(rhodt, y, nplots = 12, plotdir = 'plots')
-
