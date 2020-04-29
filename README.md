@@ -1,4 +1,4 @@
-# uvmoms
+# pyVMOMS
 
 Current Status: Solves up-down symmetric case for R0, R2 and E. Works fine.
 
